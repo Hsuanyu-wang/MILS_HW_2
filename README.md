@@ -1,47 +1,58 @@
-# MILS_HW2: Unified Multi-Task Learning
+# Unified Multi-Task Learning (DL Assignment 2)
 
 ## Overview
-This project implements a unified deep learning model for three tasks: semantic segmentation (VOC), object detection (COCO subset), and image classification (Imagenette). The model is trained in three stages with forgetting mitigation (EWC, replay buffer) and is constrained to <8M parameters and <150ms inference time.
 
-## Directory Structure
-- `colab.ipynb`: Main notebook for training and evaluation
-- `src/`: Source code (models, datasets, training, evaluation)
-- `scripts/`: Dataset download and evaluation scripts
-- `configs/`: Configuration
-- `data/`: Downloaded datasets (after running scripts)
-- `checkpoints/`: Saved models
+本專案為多任務持續學習 (continual learning) 系統，目標為在單一模型下依序學習 segmentation、detection、classification，並盡量減少舊任務的遺忘。
 
-## Setup
-1. Clone the repo and enter the `MILS_HW2` directory.
-2. Install requirements:
-   ```bash
+## Features
+
+- MobileNetV3-Small backbone
+- Unified multi-task head
+- EWC regularization
+- Replay buffer (segmentation replay in detection/classification)
+- Backbone freeze in later stages
+- 自動儲存每次訓練結果於 results/ 子資料夾
+
+## Requirements
+
+- Python 3.8+
+- torch, torchvision, numpy, tqdm, matplotlib, pycocotools
+- 詳細見 requirements.txt
+
+## Usage
+
+1. 安裝依賴
+   ```
    pip install -r requirements.txt
    ```
-3. Download datasets:
-   ```bash
+2. 下載資料集
+   ```
    python scripts/download_imagenette_cls.py
    python scripts/download_coco_det.py
    python scripts/download_voc_seg.py
    ```
+3. 執行訓練與評估
+   - 直接在 colab.ipynb 逐 cell 執行
+   - 訓練結果與模型自動儲存於 results/ 子資料夾
 
-## Running the Notebook
-Open `colab.ipynb` in Jupyter or Colab and run all cells. The notebook will:
-- Verify datasets
-- Initialize model and dataloaders
-- Train in three stages (segmentation, detection with EWC, classification with replay)
-- Evaluate and save results
+## File Structure
 
-## Evaluation
-To evaluate a trained model:
-```bash
-python scripts/eval.py --weights checkpoints/final_model.pt --dataroot data --tasks all
-```
+- `colab.ipynb`：主訓練與評估 notebook
+- `src/`：模型、資料集、訓練、評估原始碼
+- `scripts/`：資料集下載、評估腳本
+- `results/`：每次訓練的模型與詳細結果
+- `configs/`：訓練參數設定
+- `DL_Assignment_2.pdf`：作業說明
 
-## Requirements & Constraints
-- Model parameters: <8M
-- Inference time: <150ms (T4 GPU)
-- Training time: <2 hours
-- Performance drop after all stages: <5% on all tasks
+## Results
 
-## Contact
-For questions, contact: [Your Name/Email]
+- 參數數量：3.15M
+- 推理時間：4.2ms
+- 訓練時間：2.6分鐘
+- Segmentation drop: 76.6%（未達標，已盡力優化）
+- Detection/Classification drop: 0%
+
+## Notes
+
+- 若需進一步減少 segmentation drop，建議採用更獨立的 multi-head、joint training 或進階 continual learning 方法。
+- 詳細 loss curve 與訓練 log 請見 results/ 子資料夾。

@@ -53,6 +53,7 @@ class MultiTaskTrainer:
     def train_stage_2_detection(self, epochs=None):
         """Stage 2: Train ONLY on detection with EWC"""
         print("Stage 2: Training on Mini-COCO-Det with forgetting mitigation...")
+        self.model.freeze_backbone()
         # Apply Elastic Weight Consolidation
         self.apply_ewc_regularization()
         if epochs is None:
@@ -77,11 +78,13 @@ class MultiTaskTrainer:
             avg_loss = running_loss / len(train_loader)
             epoch_losses.append(avg_loss)
         self.baselines['mAP'] = self.evaluate_detection()
+        self.model.unfreeze_backbone()
         return {'map': self.baselines['mAP'], 'losses': epoch_losses}
         
     def train_stage_3_classification(self, epochs=None):
         """Stage 3: Train ONLY on classification with replay buffer"""
         print("Stage 3: Training on Imagenette-160 with replay...")
+        self.model.freeze_backbone()
         # Maintain replay buffer (100 images per previous task)
         replay_buffer = self.create_replay_buffer() if hasattr(self, 'create_replay_buffer') else None
         if epochs is None:
@@ -106,6 +109,7 @@ class MultiTaskTrainer:
             avg_loss = running_loss / len(train_loader)
             epoch_losses.append(avg_loss)
         self.baselines['Top1'] = self.evaluate_classification()
+        self.model.unfreeze_backbone()
         return {'top1': self.baselines['Top1'], 'losses': epoch_losses}
         
     def validate_forgetting_constraint(self):
