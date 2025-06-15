@@ -85,6 +85,15 @@ class ClassificationDataset(Dataset):
         image, label = self.image_folder[idx]
         return {'image': image, 'label': label}
 
+class SegmentationDictWrapper(Dataset):
+    def __init__(self, base_dataset):
+        self.base_dataset = base_dataset
+    def __len__(self):
+        return len(self.base_dataset)
+    def __getitem__(self, idx):
+        image, mask = self.base_dataset[idx]
+        return {'image': image, 'mask': mask}
+
 def create_datasets_from_downloads():
     """根據你的下載檔案創建數據集"""
     
@@ -100,6 +109,7 @@ def create_datasets_from_downloads():
         target_transform=mask_transform
     )
     voc_train_subset = Subset(voc_train, list(range(240)))
+    voc_train_subset = SegmentationDictWrapper(voc_train_subset)
     
     voc_val = VOCSegmentation(
         root='./data',
@@ -110,6 +120,7 @@ def create_datasets_from_downloads():
         target_transform=mask_transform
     )
     voc_val_subset = Subset(voc_val, list(range(60)))
+    voc_val_subset = SegmentationDictWrapper(voc_val_subset)
     
     # 2. Imagenette Classification (根據你的download_imagenette_cls.py)
     imagenette_train = datasets.ImageFolder(
@@ -145,25 +156,53 @@ def create_datasets_from_downloads():
         'det': {'train': coco_train, 'val': coco_val}
     }
 
+def detection_collate_fn(batch):
+    # Batch is a list of dicts with keys: image, targets, img_id
+    images = [item['image'] for item in batch]
+    targets = [item['targets'] for item in batch]
+    img_ids = [item['img_id'] for item in batch]
+    # Stack images, keep targets as list
+    images = torch.stack(images, dim=0)
+    return {'image': images, 'targets': targets, 'img_id': img_ids}
+
 def create_dataloaders(batch_size=16, num_workers=2):
     """創建DataLoaders"""
     datasets = create_datasets_from_downloads()
     
     dataloaders = {}
     for task in ['seg', 'cls', 'det']:
-        dataloaders[task] = {
-            'train': DataLoader(
-                datasets[task]['train'],
-                batch_size=batch_size,
-                shuffle=True,
-                num_workers=num_workers
-            ),
-            'val': DataLoader(
-                datasets[task]['val'], 
-                batch_size=batch_size,
-                shuffle=False,
-                num_workers=num_workers
-            )
-        }
+        if task == 'det':
+            # Use custom collate_fn for detection
+            dataloaders[task] = {
+                'train': DataLoader(
+                    datasets[task]['train'],
+                    batch_size=batch_size,
+                    shuffle=True,
+                    num_workers=num_workers,
+                    collate_fn=detection_collate_fn
+                ),
+                'val': DataLoader(
+                    datasets[task]['val'], 
+                    batch_size=batch_size,
+                    shuffle=False,
+                    num_workers=num_workers,
+                    collate_fn=detection_collate_fn
+                )
+            }
+        else:
+            dataloaders[task] = {
+                'train': DataLoader(
+                    datasets[task]['train'],
+                    batch_size=batch_size,
+                    shuffle=True,
+                    num_workers=num_workers
+                ),
+                'val': DataLoader(
+                    datasets[task]['val'], 
+                    batch_size=batch_size,
+                    shuffle=False,
+                    num_workers=num_workers
+                )
+            }
     
     return dataloaders

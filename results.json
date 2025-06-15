@@ -1,0 +1,11 @@
+{
+  "final_performance": {
+    "drops": {
+      "segmentation": 2.0,
+      "detection": 3.0,
+      "classification": 1.5
+    }
+  },
+  "parameter_count": 3152507,
+  "inference_time_ms": 4.339094161987305
+}
