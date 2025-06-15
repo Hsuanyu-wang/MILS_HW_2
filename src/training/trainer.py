@@ -17,14 +17,18 @@ class MultiTaskTrainer:
         self.cls_criterion = nn.CrossEntropyLoss()
         self.det_criterion = nn.MSELoss()  # 佔位，實際應根據detection head格式設計
         
-    def train_stage_1_segmentation(self):
+    def train_stage_1_segmentation(self, epochs=None):
         """Stage 1: Train ONLY on segmentation"""
         print("Stage 1: Training on Mini-VOC-Seg only...")
         train_loader = self.datasets['seg']['train']
         device = next(self.model.parameters()).device
-        for epoch in range(self.config.stage1_epochs):
-            for i, batch in enumerate(tqdm(train_loader, desc=f"Segmentation Epoch {epoch+1}")):
-                # if i == 0:
+        if epochs is None:
+            epochs = self.config.stage1_epochs
+        epoch_losses = []
+        for epoch in range(epochs):
+            running_loss = 0.0
+            for i, batch in enumerate(train_loader):
+                # if i == 0 and epoch == 0:
                 #     print("[DEBUG] Batch type:", type(batch))
                 #     if isinstance(batch, dict):
                 #         print("[DEBUG] Batch keys:", batch.keys())
@@ -39,66 +43,70 @@ class MultiTaskTrainer:
                 loss = self.seg_criterion(seg_out, masks)
                 loss.backward()
                 self.optimizer.step()
-        
+                running_loss += loss.item()
+            avg_loss = running_loss / len(train_loader)
+            epoch_losses.append(avg_loss)
         # Record baseline performance
         self.baselines['mIoU'] = self.evaluate_segmentation()
-        
-        return {'miou': self.baselines['mIoU']}
+        return {'miou': self.baselines['mIoU'], 'losses': epoch_losses}
         
     def train_stage_2_detection(self, epochs=None):
         """Stage 2: Train ONLY on detection with EWC"""
         print("Stage 2: Training on Mini-COCO-Det with forgetting mitigation...")
-        
         # Apply Elastic Weight Consolidation
         self.apply_ewc_regularization()
-        
         if epochs is None:
             epochs = self.config.stage2_epochs
         train_loader = self.datasets['det']['train']
         device = next(self.model.parameters()).device
+        epoch_losses = []
+        replay_buffer = self.create_replay_buffer() if hasattr(self, 'create_replay_buffer') else None
         for epoch in range(epochs):
-            for batch in tqdm(train_loader, desc=f"Detection Epoch {epoch+1}"):
+            running_loss = 0.0
+            for batch in train_loader:
                 images = batch['image'].to(device)
                 self.optimizer.zero_grad()
                 det_out, _, _ = self.model(images)
                 det_loss = self.det_criterion(det_out.float(), torch.zeros_like(det_out))
                 ewc_loss = self.compute_ewc_loss() if hasattr(self, 'compute_ewc_loss') else 0.0
-                total_loss = det_loss + self.config.ewc_lambda * ewc_loss
+                replay_loss = self.compute_replay_loss(replay_buffer) if replay_buffer is not None and hasattr(self, 'compute_replay_loss') else 0.0
+                total_loss = det_loss + self.config.ewc_lambda * ewc_loss + 1.0 * replay_loss
                 total_loss.backward()
                 self.optimizer.step()
-        
+                running_loss += total_loss.item() if hasattr(total_loss, 'item') else float(total_loss)
+            avg_loss = running_loss / len(train_loader)
+            epoch_losses.append(avg_loss)
         self.baselines['mAP'] = self.evaluate_detection()
-        
-        return {'map': self.baselines['mAP']}
+        return {'map': self.baselines['mAP'], 'losses': epoch_losses}
         
     def train_stage_3_classification(self, epochs=None):
         """Stage 3: Train ONLY on classification with replay buffer"""
         print("Stage 3: Training on Imagenette-160 with replay...")
-        
-        # Maintain replay buffer (10 images per previous task)
+        # Maintain replay buffer (100 images per previous task)
         replay_buffer = self.create_replay_buffer() if hasattr(self, 'create_replay_buffer') else None
-        
         if epochs is None:
             epochs = self.config.stage3_epochs
         train_loader = self.datasets['cls']['train']
         device = next(self.model.parameters()).device
+        epoch_losses = []
         for epoch in range(epochs):
-            for batch in tqdm(train_loader, desc=f"Classification Epoch {epoch+1}"):
+            running_loss = 0.0
+            for batch in train_loader:
                 images = batch['image'].to(device)
                 labels = batch['label'].to(device)
                 self.optimizer.zero_grad()
                 _, _, cls_out = self.model(images)
                 cls_loss = self.cls_criterion(cls_out, labels)
-                
                 # Add replay loss
                 replay_loss = self.compute_replay_loss(replay_buffer) if replay_buffer is not None and hasattr(self, 'compute_replay_loss') else 0.0
-                total_loss = cls_loss + replay_loss
+                total_loss = cls_loss + 1.0 * replay_loss
                 total_loss.backward()
                 self.optimizer.step()
-        
+                running_loss += total_loss.item() if hasattr(total_loss, 'item') else float(total_loss)
+            avg_loss = running_loss / len(train_loader)
+            epoch_losses.append(avg_loss)
         self.baselines['Top1'] = self.evaluate_classification()
-        
-        return {'top1': self.baselines['Top1']}
+        return {'top1': self.baselines['Top1'], 'losses': epoch_losses}
         
     def validate_forgetting_constraint(self):
         """Ensure <5% performance drop on all tasks"""
