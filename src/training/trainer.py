@@ -92,7 +92,11 @@ class MultiTaskTrainer:
             masks = batch['mask']
             self.model.zero_grad()
             _, seg_out, _ = self.model(images)
-            if seg_out.shape[-2:] != masks.shape[-2:]:
-                seg_out = F.interpolate(seg_out, size=masks.shape[-2:], mode='bilinear', align_corners=False)
+            # 強制 upsample
+            seg_out = F.interpolate(seg_out, size=masks.shape[-2:], mode='bilinear', align_corners=False)
+            if masks.ndim == 4 and masks.shape[1] == 1:
+                masks = masks.squeeze(1)
+            masks = masks.long()
+            print('seg_out shape:', seg_out.shape, 'masks shape:', masks.shape)  # debug
             loss = self.seg_criterion(seg_out, masks)
             loss.backward()
