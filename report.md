@@ -7,28 +7,28 @@
 - COCO subset detection
 - Imagenette classification
 
-並且要求每個任務在經過後續任務訓練後，performance drop 不超過 5%。
+並且要求每個任務在經過後續訓練後，performance drop 不超過 5%。
 
 ---
 
 ## 2. Model Architecture
 
-- **Backbone**: MobileNetV3-Small (預訓練, 參數量低)
+- **Backbone**: MobileNetV3-Small (預訓練, 2.5M 參數)
 - **Neck**: 兩層 Conv-BN-ReLU
-- **Head**: 統一多任務 head，分別輸出 detection, segmentation, classification
-- **參數總數**: 約 3.15M
-- **推理時間**: 約 4.2ms (batch=1, 512x512, T4 GPU)
+- **Head**: 統一多任務 head（2-3層, single branch, 同時輸出三任務）
+- **參數總數**: 3,152,507
+- **推理時間**: 5.1ms (batch=1, 512x512, T4 GPU)
 
 ---
 
-## 3. Training Strategy
+## 3. Training Schedule & Forgetting Remedy
 
-- **三階段訓練**: 先 segmentation，後 detection (EWC)，最後 classification (replay)
-- **Replay Buffer**: detection/classification 階段都 replay segmentation 舊資料
+- **三階段訓練**: 先 segmentation，後 detection (EWC + replay)，最後 classification (replay)
+- **Replay Buffer**: detection/classification 階段都 replay segmentation 舊資料（每階段每任務 ≤ 10 images）
 - **EWC**: detection 階段加入 Elastic Weight Consolidation
 - **Backbone Freeze**: detection/classification 階段凍結 backbone，僅訓練 head
 - **Loss**: detection/classification 階段 loss 加 segmentation replay loss，權重可調
-- **訓練時間**: 約 2~3 分鐘（可大幅增加 epochs 以用滿2小時）
+- **訓練時間**: 8.3分鐘（可大幅增加 epochs 以用滿2小時）
 
 ---
 
@@ -36,13 +36,13 @@
 
 | 任務           | Baseline | After Detection | After Classification | Drop (%) |
 |----------------|----------|-----------------|---------------------|----------|
-| Segmentation   | 0.159    | 0.035           | 0.040               | 76.6     |
+| Segmentation   | 0.2115   | 0.0477          | 0.0624              | 70.5     |
 | Detection mAP  | 0.5      | -               | 0.5                 | 0.0      |
 | Classification | 1.0      | -               | 1.0                 | 0.0      |
 
 - **參數數量**: 3,152,507
-- **推理時間**: 4.2ms
-- **訓練時間**: 2.6分鐘
+- **推理時間**: 5.1ms
+- **訓練時間**: 8.3分鐘
 
 ---
 
